@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.turbo/
+*.log
+.env
+.env.local
+coverage/
+packages/database/src/generated/
+.DS_Store

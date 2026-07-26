@@ -1,0 +1,365 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = "postgresql://neondb_owner:npg_MOKi0xyo7dTU@ep-orange-bird-atjbsmqz-pooler.c-9.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
+}
+
+// ───────────── Users & Admins ─────────────
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  timezone     String   @default("UTC")
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Account suspension (set by an admin). suspendedUntil null = indefinite.
+  suspendedAt      DateTime?
+  suspendedUntil   DateTime?
+  suspensionReason String?
+
+  categories          Category[]
+  activities          Activity[]
+  activityBatches     ActivityBatch[]
+  recurringTemplates  RecurringTemplate[]
+  dayNotes            DayNote[]
+  goals               Goal[]
+  tags                Tag[]
+  reminders           Reminder[]
+  conversations       Conversation[]
+  settings            Settings?
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  subscription        Subscription?
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  EXPIRED
+}
+
+model Subscription {
+  id                 String             @id @default(cuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  plan               String             @default("ASSISTANT_UNLIMITED")
+  status             SubscriptionStatus @default(ACTIVE)
+  provider           String             @default("mock")
+  providerRef        String?
+  currentPeriodStart DateTime
+  currentPeriodEnd   DateTime
+  cancelAtPeriodEnd  Boolean            @default(false)
+  canceledAt         DateTime?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  @@index([status])
+}
+
+model RefreshToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+enum AdminRole {
+  SUPPORT
+  SUPERADMIN
+}
+
+model Admin {
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  name         String?
+  role         AdminRole @default(SUPPORT)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  assignedConversations Conversation[]
+  messages              Message[]
+}
+
+// ───────────── Categories & Activities ─────────────
+model Category {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String // hex, e.g. "#2563EB"
+  icon      String?
+  isDefault Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime? // soft delete
+
+  activities         Activity[]
+  recurringTemplates RecurringTemplate[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model ActivityBatch {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title           String
+  rangeStart      DateTime @db.Date
+  rangeEnd        DateTime @db.Date
+  excludeWeekends Boolean  @default(false)
+  createdAt       DateTime @default(now())
+
+  activities Activity[]
+
+  @@index([userId])
+}
+
+model RecurringTemplate {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  rrule       String // iCal RRULE, e.g. "FREQ=WEEKLY;BYDAY=MO,WE,FR"
+  startTime   String?
+  endTime     String?
+  active      Boolean   @default(true)
+  lastRunOn   DateTime? @db.Date // last date materialized through
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  activities Activity[]
+
+  @@index([userId, active])
+}
+
+model Activity {
+  id          String             @id @default(cuid())
+  userId      String
+  user        User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  categoryId  String?
+  category    Category?          @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  batchId     String?
+  batch       ActivityBatch?     @relation(fields: [batchId], references: [id], onDelete: SetNull)
+  templateId  String?
+  template    RecurringTemplate? @relation(fields: [templateId], references: [id], onDelete: SetNull)
+  goalId      String?
+  goal        Goal?              @relation(fields: [goalId], references: [id], onDelete: SetNull)
+  title       String
+  description String?
+  date        DateTime           @db.Date
+  startTime   String? // "09:00", local to user's tz
+  endTime     String? // "10:30"
+  isDone      Boolean            @default(false)
+  completedAt DateTime?
+  order       Int                @default(0)
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  deletedAt   DateTime? // soft delete
+
+  tags      Tag[] // implicit many-to-many
+  reminders Reminder[]
+  history   ActivityHistory[]
+
+  @@index([userId, date])
+  @@index([categoryId])
+  @@index([batchId])
+  @@index([goalId])
+}
+
+model ActivityHistory {
+  id         String   @id @default(cuid())
+  activityId String
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  userId     String
+  changeType String // CREATED | UPDATED | TOGGLED | DELETED
+  snapshot   Json
+  createdAt  DateTime @default(now())
+
+  @@index([activityId])
+}
+
+// ───────────── Tags, Goals, Reminders ─────────────
+model Tag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String?
+  createdAt DateTime @default(now())
+
+  activities Activity[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  ARCHIVED
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  targetDate  DateTime?  @db.Date
+  status      GoalStatus @default(ACTIVE)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  milestones Milestone[]
+  activities Activity[]
+
+  @@index([userId, status])
+}
+
+model Milestone {
+  id      String    @id @default(cuid())
+  goalId  String
+  goal    Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title   String
+  done    Boolean   @default(false)
+  dueDate DateTime? @db.Date
+  order   Int       @default(0)
+
+  @@index([goalId])
+}
+
+enum ReminderChannel {
+  EMAIL
+  PUSH
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  FAILED
+  CANCELLED
+}
+
+model Reminder {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityId String?
+  activity   Activity?       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  remindAt   DateTime
+  channel    ReminderChannel @default(PUSH)
+  message    String?
+  status     ReminderStatus  @default(PENDING)
+  sentAt     DateTime?
+  createdAt  DateTime        @default(now())
+
+  @@index([status, remindAt])
+  @@index([userId])
+}
+
+// ───────────── Day notes ─────────────
+model DayNote {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime  @db.Date
+  content   String
+  mood      Int? // optional 1..5
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+// ───────────── Chat (user ↔ human admin) ─────────────
+enum ChatChannel {
+  GENERAL
+  FITNESS_COACH
+}
+
+enum ConversationStatus {
+  OPEN // awaiting an admin
+  ASSIGNED // an admin claimed it
+  CLOSED
+}
+
+enum MessageRole {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+model Conversation {
+  id              String             @id @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  channel         ChatChannel
+  status          ConversationStatus @default(OPEN)
+  assignedAdminId String?
+  assignedAdmin   Admin?             @relation(fields: [assignedAdminId], references: [id], onDelete: SetNull)
+  title           String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+
+  messages Message[]
+
+  @@index([userId, channel])
+  @@index([status, channel])
+}
+
+model Message {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           MessageRole
+  adminId        String? // set when role = ADMIN
+  admin          Admin?       @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  content        String
+  readAt         DateTime?
+  editedAt       DateTime?
+  deletedAt      DateTime? // soft delete
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId])
+}
+
+// ───────────── Settings ─────────────
+model Settings {
+  id        String   @id @default(cuid())
+  userId    String   @unique
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  data      Json     @default("{}")
+  updatedAt DateTime @updatedAt
+}

@@ -1,0 +1,27 @@
+{
+  "name": "life-planner",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Life Planner — color-coded calendar, goals, reminders, and human-admin assistant chat.",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@9.12.0",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "typecheck": "turbo run typecheck",
+    "db:generate": "pnpm --filter @life-planner/database prisma:generate",
+    "db:migrate": "pnpm --filter @life-planner/database prisma:migrate",
+    "db:seed": "pnpm --filter @life-planner/database prisma:seed",
+    "format": "prettier --write \"**/*.{ts,tsx,json,md}\""
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "prettier": "^3.3.0",
+    "turbo": "^2.1.0",
+    "typescript": "^5.5.0"
+  }
+}
