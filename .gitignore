@@ -4,7 +4,6 @@ dist/
 *.log
 .env
 .env.local
-.env.example
 coverage/
 packages/database/src/generated/
 .DS_Store
