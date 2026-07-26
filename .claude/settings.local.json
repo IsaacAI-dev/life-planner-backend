@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(ls /home/isaacuser/DEV_L/life-planner/node_modules/.pnpm | grep -i zod | head; echo \"---root zod---\"; ls -la /home/isaacuser/DEV_L/life-planner/node_modules/zod 2>/dev/null | head -3)",
-      "Read(//home/isaacuser/DEV_L/life-planner/node_modules/**)",
-      "PowerShell(wsl -d Ubuntu --cd /home/isaacuser/DEV_L/life-planner -- pnpm install 2>&1)"
-    ]
-  }
-}
