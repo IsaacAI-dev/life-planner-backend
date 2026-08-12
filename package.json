@@ -1,0 +1,27 @@
+{
+  "name": "lifeplanner-backend",
+  "private": true,
+  "version": "2.0.0",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "lint": "turbo run lint",
+    "db:generate": "pnpm --filter @lifeplanner/database generate",
+    "db:push": "pnpm --filter @lifeplanner/database push",
+    "db:migrate": "pnpm --filter @lifeplanner/database migrate",
+    "db:seed": "pnpm --filter @lifeplanner/database seed",
+    "db:studio": "pnpm --filter @lifeplanner/database studio",
+    "dev:user": "turbo run dev --filter=@lifeplanner/user-api",
+    "dev:admin": "turbo run dev --filter=@lifeplanner/admin-api",
+    "build:packages": "turbo run build --filter=./packages/*"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  }
+}

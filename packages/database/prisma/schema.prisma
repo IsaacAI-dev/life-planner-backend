@@ -1,0 +1,1707 @@
+// Life Planner — Prisma schema (v3)
+// Base spec + Addendum 2 + Addendum 3:
+//   subscriptions & multi-provider billing, five-level admin RBAC, coach/fitness/support
+//   chats with assignment, message edit/soft-delete/quote/reactions, voice notes & media,
+//   notifications, activity sessions, meal redesign, site content.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ===========================================================================
+// Enums
+// ===========================================================================
+
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum Gender {
+  FEMALE
+  MALE
+  NON_BINARY
+  UNDISCLOSED
+}
+
+/// Lifecycle of an admin account, mirroring the console's status control.
+/// INVITED means the seat exists but the person has not signed in yet;
+/// DISABLED keeps the row for audit while blocking every login.
+enum AdminStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+/// An admin holds MANY of these (see Admin.roles), e.g. [FITNESS_ADMIN, LIFE_COACH_ADMIN].
+enum AdminRole {
+  FITNESS_ADMIN
+  LIFE_COACH_ADMIN
+  SUPPORT_ADMIN
+  MANAGER
+  SUPERADMIN
+}
+
+enum GoalStatus {
+  ACTIVE
+  ACHIEVED
+  ARCHIVED
+}
+
+enum ReminderChannel {
+  EMAIL
+  PUSH
+}
+
+enum ReminderStatus {
+  PENDING
+  SENT
+  CANCELLED
+  FAILED
+}
+
+enum ActivityChangeType {
+  CREATED
+  UPDATED
+  TOGGLED
+  DELETED
+  DELETED_BY_ADMIN
+}
+
+enum BoardPermissionLevel {
+  PUBLIC_ONLY
+  FULL
+}
+
+enum BoardShareStatus {
+  ACTIVE
+  REVOKED
+}
+
+// --- Subscriptions & billing ------------------------------------------------
+
+enum SubscriptionTier {
+  FREE
+  PRO
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  TRIALING
+  PAST_DUE
+  EXPIRED
+  CANCELLED
+}
+
+enum BillingInterval {
+  MONTHLY
+  QUARTERLY
+  ANNUAL
+}
+
+/// Paddle = web outside Africa, Paystack = web within Africa,
+/// Apple/Google = mobile worldwide (store billing is mandatory there).
+enum PaymentProvider {
+  PADDLE
+  PAYSTACK
+  APPLE_APP_STORE
+  GOOGLE_PLAY
+}
+
+enum PaymentPlatform {
+  WEB
+  IOS
+  ANDROID
+}
+
+enum TransactionType {
+  INITIAL
+  RENEWAL
+  UPGRADE
+  PRORATION
+  REFUND
+  CHARGEBACK
+}
+
+enum TransactionStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  DISPUTED
+}
+
+/// A seat is entitlement, never ownership. PENDING_PAYMENT exists so the
+/// beneficiary list survives the round trip to the payment provider without
+/// anyone being invited before the money lands.
+/// What a "this wasn't me" link is attached to.
+/// What happened to an account, kept as history rather than only as current
+/// state. Without this, reinstating someone erases the fact they were ever
+/// suspended and the moderation charts silently rewrite themselves.
+enum ModerationAction {
+  SUSPENDED
+  BANNED
+  REINSTATED
+  AUTO_REINSTATED
+}
+
+enum SecurityActionType {
+  SEAT_INVITE
+  SIGNUP
+  PASSWORD_RESET
+}
+
+enum SecurityActionOutcome {
+  /// Invite only: "no thanks", entirely innocent.
+  REJECTED
+  /// Any type: "I did not initiate this" — lands in the admin abuse queue.
+  REPORTED
+}
+
+enum SeatStatus {
+  PENDING_PAYMENT
+  INVITED
+  ACTIVE
+  DECLINED
+  REVOKED
+  EXPIRED
+}
+
+enum RegionSource {
+  APP_STORE
+  PLAY_STORE
+  WEB_GEO
+  IP
+  MANUAL
+}
+
+// --- Chat -------------------------------------------------------------------
+
+/// SUPPORT is open to every tier (including FREE) — it is the complaints channel.
+/// LIFE_COACH (the Emotional Assistant) and FITNESS are Pro-only.
+enum ConversationType {
+  LIFE_COACH
+  FITNESS
+  SUPPORT
+}
+
+enum ConversationStatus {
+  OPEN
+  CLAIMED
+  CLOSED
+}
+
+enum MessageSenderType {
+  USER
+  ADMIN
+  SYSTEM
+}
+
+enum MessageKind {
+  TEXT
+  VOICE_NOTE
+  SYSTEM
+  RECOMMENDATION
+  FEEDBACK_FORM
+}
+
+enum AttachmentKind {
+  VOICE_NOTE
+  IMAGE
+  FILE
+}
+
+enum CoachRole {
+  FITNESS
+  LIFE_COACH
+}
+
+enum AssignmentStatus {
+  ACTIVE
+  ENDED
+}
+
+enum RecommendationKind {
+  ACTIVITY
+  GOAL
+}
+
+enum RecommendationStatus {
+  PENDING
+  ACCEPTED
+  DISMISSED
+}
+
+enum FeedbackFormStatus {
+  SENT
+  COMPLETED
+  EXPIRED
+}
+
+// --- Nutrition --------------------------------------------------------------
+
+enum MealTime {
+  BREAKFAST
+  MID_MORNING_SNACK
+  LUNCH
+  AFTERNOON_SNACK
+  DINNER
+  EVENING_SNACK
+  OTHER
+}
+
+enum MealPlanStatus {
+  DRAFT
+  PUBLISHED
+}
+
+enum MealPlanRequestStatus {
+  PENDING
+  FULFILLED
+  DECLINED
+}
+
+// --- Misc -------------------------------------------------------------------
+
+/// Income is tracked per source, because "did the client actually pay?" is the
+/// question that makes a freelance budget realistic — not a single monthly figure.
+enum IncomeStatus {
+  /// Expected, not yet in the bank.
+  PROJECTED
+  /// Landed. `receivedAt` is stamped.
+  ARRIVED
+  /// Did not arrive this month and was rolled into a later one. Kept on the
+  /// original month for the record, but excluded from its totals.
+  DEFERRED
+  /// Written off — the work fell through.
+  CANCELLED
+}
+
+/// Mirrors IncomeStatus so the two sides of the comparison mean the same thing:
+/// an expense you have committed to is not the same as one already paid.
+enum ExpenseStatus {
+  COMMITTED
+  PAID
+}
+
+enum BudgetCategory {
+  MANDATORY
+  SECONDARY
+  OPTIONAL
+}
+
+enum AnalyticsEventType {
+  PAGE_VIEW
+  CUSTOM
+}
+
+enum NotificationType {
+  REMINDER
+  COACH_REPLY
+  SUPPORT_REPLY
+  MEAL_PLAN_PUBLISHED
+  MEAL_PLAN_REQUEST_UPDATE
+  BOARD_SHARED
+  PLAN_EXPIRING
+  PLAN_EXPIRED
+  PAYMENT_FAILED
+  RECOMMENDATION
+  FEEDBACK_REQUEST
+  STREAK_MILESTONE
+}
+
+enum TextScale {
+  SMALL
+  DEFAULT
+  LARGE
+  LARGEST
+}
+
+enum CoachCheckInFrequency {
+  OFF
+  DAILY
+  WEEKLY
+}
+
+enum CalendarProvider {
+  GOOGLE
+  APPLE
+  OUTLOOK
+  ICS
+}
+
+enum MediaKind {
+  AVATAR
+  VOICE_NOTE
+  FOOD_IMAGE
+  STAFF_PHOTO
+  ATTACHMENT
+}
+
+// ===========================================================================
+// Identity
+// ===========================================================================
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  passwordHash String
+  name         String
+  timezone     String @default("UTC")
+
+  // --- region: drives catalog country AND which payment provider is offered ---
+  country      String?
+  regionSource RegionSource?
+  regionSetAt  DateTime?
+
+  // --- profile (P-06) ---
+  phone       String?
+  location    String?
+  state       String?
+  heightCm    Int?
+  yearOfBirth Int?
+  gender      Gender?
+
+  // --- avatar (P-07): an upload OR one of the bundled cartoon presets ---
+  avatarUrl      String?
+  avatarMediaId  String?       @unique
+  avatarMedia    MediaAsset?   @relation("UserAvatar", fields: [avatarMediaId], references: [id], onDelete: SetNull)
+  avatarPresetId String?
+  avatarPreset   AvatarPreset? @relation(fields: [avatarPresetId], references: [id], onDelete: SetNull)
+
+  /// Free-text notes the support, fitness and coaching desks keep about how to
+  /// work with this person — "answers voice notes faster than text".
+  ///
+  /// ADMIN EYES ONLY. Never selected by any user-facing endpoint: it is written
+  /// by staff, about the person, and surfacing it would be a nasty surprise.
+  personalityNotes String[] @default([])
+
+  icalToken String? @unique
+
+  status                 UserStatus @default(ACTIVE)
+  statusReason           String?
+  statusChangedAt        DateTime?
+  /// When a suspension lifts. Null on a permanent ban or an active account.
+  /// A suspension is treated as expired at read time, so a missed cron run
+  /// never keeps someone locked out.
+  suspendedUntil DateTime?
+
+  statusChangedByAdminId String?
+  statusChangedByAdmin   Admin?     @relation("UserStatusChanges", fields: [statusChangedByAdminId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  categories          Category[]
+  activities          Activity[]
+  activitySessions    ActivitySession[]
+  activityBatches     ActivityBatch[]
+  recurringTemplates  RecurringTemplate[]
+  goals               Goal[]
+  tags                Tag[]
+  reminders           Reminder[]
+  dayNotes            DayNote[]
+  settings            UserSettings?
+  conversations       Conversation[]
+  messages            Message[]
+  messageReactions    MessageReaction[]
+  refreshTokens       RefreshToken[]
+  passwordResetTokens PasswordResetToken[]
+  boardSharesOwned    BoardShare[]         @relation("BoardSharesOwned")
+  boardSharesViewed   BoardShare[]         @relation("BoardSharesViewed")
+  foodInventory       UserFoodInventory[]
+  mealPlans           MealPlan[]
+  mealPlanRequests    MealPlanRequest[]
+  budgetMonths        BudgetMonth[]
+  analyticsEvents     AnalyticsEvent[]
+
+  subscription        Subscription?
+  /// Seats granted TO this person by somebody else's plan.
+  seatMemberships     SubscriptionSeat[]   @relation("SeatMember")
+  securityActions     SecurityAction[]
+  moderationEvents    ModerationEvent[]
+  transactions        Transaction[]
+  coachAssignments    CoachAssignment[]
+  notifications       Notification[]
+  mediaAssets         MediaAsset[]         @relation("MediaOwner")
+  coachInsights       CoachInsight[]
+  calendarConnections CalendarConnection[]
+  importedEvents      ImportedEvent[]
+  feedbackForms       FeedbackForm[]
+  recommendations     Recommendation[]
+
+  @@index([status])
+  @@index([createdAt])
+  @@index([country])
+}
+
+model Admin {
+  id           String  @id @default(cuid())
+  email        String  @unique
+  passwordHash String
+  name         String
+  avatarUrl    String?
+  bio          String?
+  phone        String?
+  country      String?
+
+  status AdminStatus @default(ACTIVE)
+  /// Stamped on every authenticated request so the console can show "last active".
+  lastActiveAt DateTime?
+
+  /// Multiple levels per admin, e.g. [FITNESS_ADMIN, LIFE_COACH_ADMIN].
+  /// MANAGER and SUPERADMIN are the only roles that may read other admins' chats.
+  roles AdminRole[] @default([SUPPORT_ADMIN])
+
+  /// Round-robin assignment skips admins who are unavailable or at capacity.
+  isAvailable Boolean @default(true)
+  maxClients  Int     @default(50)
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  refreshTokens         AdminRefreshToken[]
+  assignedConversations Conversation[]
+  messages              Message[]
+  messageReactions      MessageReaction[]
+  activityHistory       ActivityHistory[]
+  moderatedUsers        User[]              @relation("UserStatusChanges")
+  createdMealPlans      MealPlan[]
+  coachAssignments      CoachAssignment[]   @relation("AssignedCoach")
+  assignmentsMade       CoachAssignment[]   @relation("AssigningAdmin")
+  reassignmentsFrom     ChatReassignment[]  @relation("ReassignedFrom")
+  reassignmentsTo       ChatReassignment[]  @relation("ReassignedTo")
+  reassignmentsBy       ChatReassignment[]  @relation("ReassignedBy")
+  coachInsights         CoachInsight[]
+  feedbackForms         FeedbackForm[]
+  recommendations       Recommendation[]
+  handledMealRequests   MealPlanRequest[]
+  messageEdits          MessageEdit[]
+  reviewedSecurityActions SecurityAction[]
+  moderationEvents        ModerationEvent[]
+
+  @@index([isAvailable])
+}
+
+model RefreshToken {
+  id                  String    @id @default(cuid())
+  userId              String
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash           String    @unique
+  expiresAt           DateTime
+  revokedAt           DateTime?
+  replacedByTokenHash String?
+  createdAt           DateTime  @default(now())
+
+  @@index([userId])
+}
+
+model AdminRefreshToken {
+  id        String    @id @default(cuid())
+  adminId   String
+  admin     Admin     @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([adminId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+// ===========================================================================
+// Subscriptions & billing
+// ===========================================================================
+
+model Subscription {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tier     SubscriptionTier   @default(FREE)
+  status   SubscriptionStatus @default(ACTIVE)
+  interval BillingInterval?
+
+  currency String?
+  amount   Decimal? @db.Decimal(12, 2)
+
+  provider               PaymentProvider?
+  platform               PaymentPlatform?
+  providerCustomerId     String?
+  providerSubscriptionId String?          @unique
+  /// Apple/Google give an opaque token rather than a subscription id.
+  providerPurchaseToken  String?
+
+  startedAt         DateTime?
+  currentPeriodEnd  DateTime?
+  renewsAt          DateTime?
+  cancelAtPeriodEnd Boolean   @default(false)
+  cancelledAt       DateTime?
+  expiredAt         DateTime?
+  trialEndsAt       DateTime?
+
+  /// Set when the tier last flipped to PRO — coach assignment keys off this.
+  activatedAt DateTime?
+
+  /// Total seats this plan grants, including the payer's own. 1 = solo.
+  seatCount Int @default(1)
+  /// A downgrade takes effect at period end, since the current one is paid for.
+  pendingSeatCount Int?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+  seats        SubscriptionSeat[]
+
+  @@index([tier, status])
+  @@index([status, currentPeriodEnd])
+  @@index([provider, providerCustomerId])
+}
+
+/// One row per money movement. Deliberately fat: VAT/GST must be separable from
+/// net revenue per jurisdiction, and store commission differs from PSP fees, so
+/// each is stored rather than derived.
+model Transaction {
+  id             String        @id @default(cuid())
+  userId         String
+  user           User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  type   TransactionType   @default(INITIAL)
+  status TransactionStatus @default(PENDING)
+
+  provider PaymentProvider
+  platform PaymentPlatform
+
+  providerTransactionId String  @unique
+  providerInvoiceId     String?
+  providerOrderId       String?
+  /// Apple: originalTransactionId. Google: the order-id chain root.
+  providerOriginalId    String?
+
+  currency String
+  /// grossAmount = netAmount + taxAmount. Fees are deducted from gross.
+  grossAmount Decimal @db.Decimal(12, 2)
+  netAmount   Decimal @db.Decimal(12, 2)
+  taxAmount   Decimal @default(0) @db.Decimal(12, 2)
+  taxRate     Decimal @default(0) @db.Decimal(6, 4)
+
+  taxCountry       String?
+  taxType          String?
+  taxInclusive     Boolean @default(true)
+  merchantOfRecord String?
+
+  /// Store commission (Apple/Google 15-30%) is distinct from PSP processing fees.
+  platformFee  Decimal @default(0) @db.Decimal(12, 2)
+  providerFee  Decimal @default(0) @db.Decimal(12, 2)
+  payoutAmount Decimal @default(0) @db.Decimal(12, 2)
+
+  settlementCurrency String?
+  settlementAmount   Decimal? @db.Decimal(12, 2)
+  exchangeRate       Decimal? @db.Decimal(18, 8)
+
+  billingCountry String?
+  refundedAmount Decimal   @default(0) @db.Decimal(12, 2)
+  refundedAt     DateTime?
+  failureReason  String?
+  description    String?
+  rawPayload     Json?
+
+  occurredAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([userId, occurredAt])
+  @@index([provider, status])
+  @@index([occurredAt])
+  @@index([taxCountry])
+}
+
+/// One row per seat beyond the payer's own.
+///
+/// A seat grants entitlement and NOTHING else: the payer gets no read path to
+/// the beneficiary's data, and the beneficiary gets none to the payer's. The
+/// only way anyone sees anyone else's board remains BoardShare, at the board
+/// owner's own initiative.
+model SubscriptionSeat {
+  id             String       @id @default(cuid())
+  subscriptionId String
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  /// Null until the invite is claimed — the beneficiary may not have an account yet.
+  memberUserId String?
+  memberUser   User?   @relation("SeatMember", fields: [memberUserId], references: [id], onDelete: SetNull)
+
+  inviteEmail    String
+  inviteTokenHash String?   @unique
+  inviteExpiresAt DateTime?
+
+  status SeatStatus @default(PENDING_PAYMENT)
+
+  invitedAt DateTime?
+  claimedAt DateTime?
+  revokedAt DateTime?
+  /// Set when a revoked seat is scheduled to lapse at period end.
+  endsAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  securityActions SecurityAction[]
+
+  /// A person can hold at most one seat per subscription.
+  @@unique([subscriptionId, inviteEmail])
+  @@index([memberUserId, status])
+  @@index([status])
+}
+
+/// Immutable moderation history. Rows are never updated or deleted — the
+/// account's current state lives on User.status; this is the audit trail and
+/// the source for the console's banned/suspended trend charts.
+model ModerationEvent {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action ModerationAction
+
+  /// Withheld from the user on a ban; shown to them on a suspension.
+  reason String?
+  /// Set on SUSPENDED so the console can show when it lifts.
+  expiresAt DateTime?
+
+  /// Null when the daily sweep lifted it rather than a person.
+  adminId String?
+  admin   Admin?  @relation(fields: [adminId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+
+  @@index([action, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// One-time token behind every "this wasn't me" link. Any email that announces
+/// an action somebody could have taken in your name carries one: seat invites,
+/// sign-ups and password resets.
+///
+/// Only the person who controls the mailbox ever receives the token, which is
+/// what makes acting on a report safe — it cannot be used to grief a stranger.
+model SecurityAction {
+  id        String             @id @default(cuid())
+  type      SecurityActionType
+  tokenHash String             @unique
+
+  /// The mailbox the notice was sent to.
+  email String
+  /// The account the action concerns, when one exists.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Set for SEAT_INVITE.
+  seatId String?
+  seat   SubscriptionSeat? @relation(fields: [seatId], references: [id], onDelete: Cascade)
+
+  expiresAt DateTime
+
+  outcome     SecurityActionOutcome?
+  respondedAt DateTime?
+  note        String?
+  /// Captured on response only, for the abuse queue.
+  ip        String?
+  userAgent String?
+
+  reviewedByAdminId String?
+  reviewedByAdmin   Admin?  @relation(fields: [reviewedByAdminId], references: [id], onDelete: SetNull)
+  reviewedAt        DateTime?
+  reviewNote        String?
+
+  createdAt DateTime @default(now())
+
+  @@index([outcome, createdAt])
+  @@index([email])
+  @@index([userId])
+}
+
+/// Idempotency ledger. Providers retry aggressively; the unique key on
+/// (provider, eventId) is what stops a renewal being counted twice.
+model WebhookEvent {
+  id          String          @id @default(cuid())
+  provider    PaymentProvider
+  eventId     String
+  eventType   String
+  signature   String?
+  payload     Json
+  processedAt DateTime?
+  error       String?
+  createdAt   DateTime        @default(now())
+
+  @@unique([provider, eventId])
+  @@index([provider, eventType])
+}
+
+/// Server-owned pricing so a change ships without a client release (P-02).
+model PlanCatalogEntry {
+  id       String           @id @default(cuid())
+  tier     SubscriptionTier
+  interval BillingInterval
+  currency String
+  amount   Decimal          @db.Decimal(12, 2)
+  /// Region this price applies to; empty string = default/fallback price.
+  region   String           @default("")
+
+  /// How many people this plan covers, including the payer. 1 = solo.
+  seats Int @default(1)
+
+  name String
+  /// All customer-facing copy lives here so it can be reworded from the admin
+  /// API without a frontend deploy.
+  description String?
+  /// Shown beside multi-seat plans: what the payer can and cannot see.
+  privacyNote String?
+  features    String[]
+  highlight   Boolean  @default(false)
+  active      Boolean  @default(true)
+  sortOrder   Int      @default(0)
+
+  paddlePriceId   String?
+  paystackPlanId  String?
+  appleProductId  String?
+  googleProductId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tier, interval, seats, currency, region])
+  @@index([active, sortOrder])
+  @@index([region, active])
+}
+
+// ===========================================================================
+// Planner core
+// ===========================================================================
+
+model Category {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String    @default("#6366F1")
+  icon      String?
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  activities         Activity[]
+  recurringTemplates RecurringTemplate[]
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model Tag {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  color     String   @default("#64748B")
+  createdAt DateTime @default(now())
+
+  activities Activity[] @relation("ActivityTags")
+
+  @@unique([userId, name])
+  @@index([userId])
+}
+
+model ActivityBatch {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  createdAt DateTime @default(now())
+
+  activities Activity[]
+
+  @@index([userId])
+}
+
+model Activity {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  date        DateTime? @db.Date
+  startTime   String?
+  endTime     String?
+  isDone      Boolean   @default(false)
+  completedAt DateTime?
+  order       Int       @default(0)
+  isPrivate   Boolean   @default(false)
+
+  windowStart    DateTime? @db.Date
+  windowEnd      DateTime? @db.Date
+  targetCount    Int       @default(1)
+  completedCount Int       @default(0)
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  goalId String?
+  goal   Goal?   @relation(fields: [goalId], references: [id], onDelete: SetNull)
+
+  batchId String?
+  batch   ActivityBatch? @relation(fields: [batchId], references: [id], onDelete: SetNull)
+
+  recurringTemplateId String?
+  recurringTemplate   RecurringTemplate? @relation(fields: [recurringTemplateId], references: [id], onDelete: SetNull)
+
+  tags      Tag[]             @relation("ActivityTags")
+  reminders Reminder[]
+  history   ActivityHistory[]
+  sessions  ActivitySession[]
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([userId, date])
+  @@index([userId, isDone])
+  @@index([userId, windowStart, windowEnd])
+  @@index([batchId])
+  @@index([recurringTemplateId])
+}
+
+/// P-09 — a live timer. Many sessions per activity supports pause/resume, and
+/// actual-vs-planned minutes become reportable.
+model ActivitySession {
+  id         String    @id @default(cuid())
+  activityId String
+  activity   Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  startedAt  DateTime  @default(now())
+  endedAt    DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([activityId, startedAt])
+  @@index([userId, endedAt])
+}
+
+model ActivityHistory {
+  id         String             @id @default(cuid())
+  activityId String
+  activity   Activity           @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  changeType ActivityChangeType
+  snapshot   Json?
+  adminId    String?
+  admin      Admin?             @relation(fields: [adminId], references: [id], onDelete: SetNull)
+  createdAt  DateTime           @default(now())
+
+  @@index([activityId, createdAt])
+}
+
+model RecurringTemplate {
+  id                 String    @id @default(cuid())
+  userId             String
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title              String
+  description        String?
+  rrule              String
+  startTime          String?
+  endTime            String?
+  isPrivate          Boolean   @default(false)
+  active             Boolean   @default(true)
+  horizonEnd         DateTime? @db.Date
+  lastMaterializedAt DateTime?
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  activities Activity[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, active])
+}
+
+model Goal {
+  id          String     @id @default(cuid())
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  targetDate  DateTime?  @db.Date
+  status      GoalStatus @default(ACTIVE)
+  /// P-17 — at most one featured goal per user, enforced transactionally.
+  featured    Boolean    @default(false)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  deletedAt   DateTime?
+
+  milestones Milestone[]
+  activities Activity[]
+
+  @@index([userId, status])
+  @@index([userId, featured])
+}
+
+model Milestone {
+  id        String    @id @default(cuid())
+  goalId    String
+  goal      Goal      @relation(fields: [goalId], references: [id], onDelete: Cascade)
+  title     String
+  dueDate   DateTime? @db.Date
+  isDone    Boolean   @default(false)
+  order     Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([goalId])
+}
+
+model Reminder {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activityId String?
+  activity   Activity?       @relation(fields: [activityId], references: [id], onDelete: Cascade)
+  remindAt   DateTime
+  channel    ReminderChannel @default(EMAIL)
+  status     ReminderStatus  @default(PENDING)
+  message    String?
+  sentAt     DateTime?
+  createdAt  DateTime        @default(now())
+  updatedAt  DateTime        @updatedAt
+
+  @@index([status, remindAt])
+  @@index([userId])
+}
+
+model DayNote {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime @db.Date
+  content   String
+  mood      Int?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+model UserSettings {
+  id                       String                @id @default(cuid())
+  userId                   String                @unique
+  user                     User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  theme                    String                @default("system")
+  weekStartsOn             Int                   @default(1)
+  defaultCalendarView      String                @default("week")
+  excludeWeekendsByDefault Boolean               @default(false)
+  timezone                 String                @default("UTC")
+  defaultCategoryId        String?
+  notifications            Json                  @default("{\"email\":true,\"push\":false,\"dailyReminderTime\":\"08:00\"}")
+  /// P-12 / P-13
+  textScale                TextScale             @default(DEFAULT)
+  coachCheckInFrequency    CoachCheckInFrequency @default(DAILY)
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+}
+
+// ===========================================================================
+// Chat
+// ===========================================================================
+
+model Conversation {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type   ConversationType   @default(SUPPORT)
+  status ConversationStatus @default(OPEN)
+  title  String?
+
+  assignedAdminId String?
+  assignedAdmin   Admin?  @relation(fields: [assignedAdminId], references: [id], onDelete: SetNull)
+
+  lastMessageAt DateTime?
+  closedAt      DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  messages      Message[]
+  reassignments ChatReassignment[]
+  feedbackForms FeedbackForm[]
+
+  /// One conversation per type per user; support threads reuse the same row.
+  @@unique([userId, type])
+  @@index([status, lastMessageAt])
+  @@index([assignedAdminId, status])
+  @@index([type, status])
+}
+
+model Message {
+  id             String            @id @default(cuid())
+  conversationId String
+  conversation   Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  kind           MessageKind       @default(TEXT)
+  senderType     MessageSenderType
+  senderUserId   String?
+  senderUser     User?             @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+  senderAdminId  String?
+  senderAdmin    Admin?            @relation(fields: [senderAdminId], references: [id], onDelete: SetNull)
+
+  /// Emoji are plain unicode in `content`; no special handling needed.
+  content String
+
+  /// Quote reply. SetNull so deleting the quoted message doesn't cascade.
+  replyToId String?
+  replyTo   Message?  @relation("MessageReplies", fields: [replyToId], references: [id], onDelete: SetNull)
+  replies   Message[] @relation("MessageReplies")
+
+  /// Soft edit — `content` is current, MessageEdit holds every prior version.
+  editedAt  DateTime?
+  editCount Int       @default(0)
+
+  /// Soft delete with a 30-day retention window before the purge job removes it.
+  deletedAt        DateTime?
+  deletedByType    MessageSenderType?
+  deletedByAdminId String?
+  purgeAfter       DateTime?
+
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  attachments    MessageAttachment[]
+  edits          MessageEdit[]
+  reactions      MessageReaction[]
+  recommendation Recommendation?
+  feedbackForm   FeedbackForm?
+
+  @@index([conversationId, createdAt])
+  @@index([conversationId, deletedAt])
+  @@index([purgeAfter])
+}
+
+/// Every prior version of a message. Managers and superadmins can read these;
+/// nobody else ever sees them.
+model MessageEdit {
+  id              String   @id @default(cuid())
+  messageId       String
+  message         Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  previousContent String
+  editedByAdminId String?
+  editedByAdmin   Admin?   @relation(fields: [editedByAdminId], references: [id], onDelete: SetNull)
+  editedByUserId  String?
+  createdAt       DateTime @default(now())
+
+  @@index([messageId, createdAt])
+}
+
+model MessageReaction {
+  id        String   @id @default(cuid())
+  messageId String
+  message   Message  @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  emoji     String
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId   String?
+  admin     Admin?   @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([messageId, userId, emoji])
+  @@unique([messageId, adminId, emoji])
+  @@index([messageId])
+}
+
+model MessageAttachment {
+  id        String         @id @default(cuid())
+  messageId String
+  message   Message        @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  kind      AttachmentKind @default(VOICE_NOTE)
+
+  mediaId String?     @unique
+  media   MediaAsset? @relation(fields: [mediaId], references: [id], onDelete: SetNull)
+
+  url             String
+  mimeType        String
+  sizeBytes       Int
+  durationSeconds Int?
+  /// Normalised 0-1 samples, computed server-side so every client agrees.
+  waveform        Json?
+  createdAt       DateTime @default(now())
+
+  @@index([messageId])
+}
+
+/// Coach/fitness assignment. A PRO activation creates one row per CoachRole
+/// via least-loaded round robin.
+model CoachAssignment {
+  id      String    @id @default(cuid())
+  userId  String
+  user    User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId String
+  admin   Admin     @relation("AssignedCoach", fields: [adminId], references: [id], onDelete: Cascade)
+  role    CoachRole
+
+  status            AssignmentStatus @default(ACTIVE)
+  assignedByAdminId String?
+  assignedByAdmin   Admin?           @relation("AssigningAdmin", fields: [assignedByAdminId], references: [id], onDelete: SetNull)
+  reason            String?
+
+  startedAt DateTime  @default(now())
+  endedAt   DateTime?
+
+  @@index([userId, role, status])
+  @@index([adminId, status])
+}
+
+/// Audit trail for manager/superadmin reassignment of a conversation.
+model ChatReassignment {
+  id             String       @id @default(cuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  fromAdminId    String?
+  fromAdmin      Admin?       @relation("ReassignedFrom", fields: [fromAdminId], references: [id], onDelete: SetNull)
+  toAdminId      String
+  toAdmin        Admin        @relation("ReassignedTo", fields: [toAdminId], references: [id], onDelete: Cascade)
+  byAdminId      String
+  byAdmin        Admin        @relation("ReassignedBy", fields: [byAdminId], references: [id], onDelete: Cascade)
+  reason         String?
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+/// In-chat activity/goal suggestion an admin sends; the user accepts or dismisses.
+model Recommendation {
+  id        String               @id @default(cuid())
+  messageId String               @unique
+  message   Message              @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId   String
+  admin     Admin                @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  kind      RecommendationKind
+  status    RecommendationStatus @default(PENDING)
+  /// The draft Activity/Goal payload, validated again on accept.
+  payload         Json
+  createdEntityId String?
+  respondedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([userId, status])
+}
+
+/// Weekly in-chat feedback form sent by Support.
+model FeedbackForm {
+  id             String       @id @default(cuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  messageId      String?      @unique
+  message        Message?     @relation(fields: [messageId], references: [id], onDelete: SetNull)
+  sentByAdminId  String?
+  sentByAdmin    Admin?       @relation(fields: [sentByAdminId], references: [id], onDelete: SetNull)
+
+  periodStart DateTime           @db.Date
+  periodEnd   DateTime           @db.Date
+  status      FeedbackFormStatus @default(SENT)
+
+  platformRating  Int?
+  lifeCoachRating Int?
+  fitnessRating   Int?
+  supportRating   Int?
+  comment         String?
+  /// Snapshot of who was rated, so later reassignment doesn't rewrite history.
+  ratedLifeCoachId String?
+  ratedFitnessId   String?
+
+  respondedAt DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@unique([userId, periodStart])
+  @@index([status, createdAt])
+}
+
+// ===========================================================================
+// Media (Cloudflare R2)
+// ===========================================================================
+
+model MediaAsset {
+  id   String    @id @default(cuid())
+  kind MediaKind
+  /// Object key in the R2 bucket; `url` is the public/CDN form.
+  storageKey      String  @unique
+  url             String
+  mimeType        String
+  sizeBytes       Int
+  durationSeconds Int?
+  width           Int?
+  height          Int?
+  checksum        String?
+
+  ownerUserId String?
+  ownerUser   User?   @relation("MediaOwner", fields: [ownerUserId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  attachment MessageAttachment?
+  userAvatar User?              @relation("UserAvatar")
+  foodItems  FoodCatalogItem[]
+
+  @@index([ownerUserId, kind])
+  @@index([kind, createdAt])
+}
+
+/// Bundled cartoon avatars for people who'd rather not upload a photo.
+model AvatarPreset {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  url       String
+  category  String?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  users User[]
+
+  @@index([active, sortOrder])
+}
+
+// ===========================================================================
+// Board sharing
+// ===========================================================================
+
+model BoardShare {
+  id         String               @id @default(cuid())
+  ownerId    String
+  owner      User                 @relation("BoardSharesOwned", fields: [ownerId], references: [id], onDelete: Cascade)
+  viewerId   String
+  viewer     User                 @relation("BoardSharesViewed", fields: [viewerId], references: [id], onDelete: Cascade)
+  permission BoardPermissionLevel @default(PUBLIC_ONLY)
+  status     BoardShareStatus     @default(ACTIVE)
+  createdAt  DateTime             @default(now())
+  updatedAt  DateTime             @updatedAt
+
+  @@unique([ownerId, viewerId])
+  @@index([viewerId, status])
+  @@index([ownerId])
+}
+
+// ===========================================================================
+// Nutrition
+// ===========================================================================
+
+/// A food can belong to several categories, so categories are a join table
+/// rather than a single enum column.
+model FoodCategoryTag {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  label     String
+  color     String   @default("#64748B")
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+
+  foods FoodCatalogItem[] @relation("FoodCategories")
+}
+
+model FoodCatalogItem {
+  id                 String      @id @default(cuid())
+  country            String
+  name               String
+  caloriesPerServing Int
+  servingSize        String?
+  proteinG           Float?
+  carbsG             Float?
+  fatG               Float?
+  /// P-16
+  imageUrl           String?
+  imageMediaId       String?
+  imageMedia         MediaAsset? @relation(fields: [imageMediaId], references: [id], onDelete: SetNull)
+  active             Boolean     @default(true)
+
+  categories FoodCategoryTag[] @relation("FoodCategories")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  inventories UserFoodInventory[]
+  mealItems   MealItem[]
+
+  @@unique([country, name])
+  @@index([country, active])
+}
+
+model UserFoodInventory {
+  id         String          @id @default(cuid())
+  userId     String
+  user       User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  foodItemId String
+  foodItem   FoodCatalogItem @relation(fields: [foodItemId], references: [id], onDelete: Cascade)
+  createdAt  DateTime        @default(now())
+
+  @@unique([userId, foodItemId])
+  @@index([userId])
+}
+
+model MealPlan {
+  id               String         @id @default(cuid())
+  userId           String
+  user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdByAdminId String
+  createdByAdmin   Admin          @relation(fields: [createdByAdminId], references: [id], onDelete: Cascade)
+  date             DateTime       @db.Date
+  status           MealPlanStatus @default(DRAFT)
+  targetCalories   Int?
+  notes            String?
+  publishedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  meals Meal[]
+
+  @@unique([userId, date])
+  @@index([userId, date])
+}
+
+/// A meal is a combination of foods at a point in the day.
+model Meal {
+  id                String    @id @default(cuid())
+  mealPlanId        String
+  mealPlan          MealPlan  @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  name              String?
+  mealTime          MealTime?
+  estimatedCalories Int?
+  notes             String?
+  order             Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  items MealItem[]
+
+  @@index([mealPlanId, order])
+}
+
+model MealItem {
+  id         String           @id @default(cuid())
+  mealId     String
+  meal       Meal             @relation(fields: [mealId], references: [id], onDelete: Cascade)
+  foodItemId String?
+  foodItem   FoodCatalogItem? @relation(fields: [foodItemId], references: [id], onDelete: SetNull)
+  freeText   String?
+  /// Optional — quantity is expressed either by weight or by servings.
+  weightGrams Float?
+  servings    Float?
+  order       Int    @default(0)
+
+  @@index([mealId, order])
+}
+
+/// P-18 — the user asks a coach for a plan; surfaces in the admin queue.
+model MealPlanRequest {
+  id               String                @id @default(cuid())
+  userId           String
+  user             User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date             DateTime              @db.Date
+  note             String?
+  status           MealPlanRequestStatus @default(PENDING)
+  handledByAdminId String?
+  handledByAdmin   Admin?                @relation(fields: [handledByAdminId], references: [id], onDelete: SetNull)
+  handledAt        DateTime?
+  responseNote     String?
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
+
+  @@unique([userId, date])
+  @@index([status, createdAt])
+}
+
+// ===========================================================================
+// Budget
+// ===========================================================================
+
+model BudgetMonth {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  year   Int
+  month  Int
+
+  /// Free-text note for the month as a whole.
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  expenses BudgetExpense[]
+  incomes  BudgetIncome[]
+
+  @@unique([userId, year, month])
+  @@index([userId, year, month])
+}
+
+/// A single expected or received payment. A month has many: salary, one client
+/// project, another client's retainer — each with its own title so the person
+/// can tell at a glance which money is which.
+///
+/// Amounts are in the user's own currency; there is exactly one per user,
+/// resolved from their country. Mixing currencies would need live FX rates and
+/// is deliberately out of scope.
+model BudgetIncome {
+  id            String      @id @default(cuid())
+  budgetMonthId String
+  budgetMonth   BudgetMonth @relation(fields: [budgetMonthId], references: [id], onDelete: Cascade)
+
+  title       String
+  description String?
+  /// Who it comes from, e.g. "Acme Ltd" or "Employer".
+  source String?
+
+  amount Decimal      @db.Decimal(12, 2)
+  status IncomeStatus @default(PROJECTED)
+
+  /// When it is due. Null when the person did not commit to a date.
+  expectedDate DateTime? @db.Date
+  /// Stamped when the status flips to ARRIVED, cleared if it flips back.
+  receivedAt   DateTime?
+
+  /// Set when this row was created by rolling a slipped income forward. The
+  /// original stays put as DEFERRED, so a client who has slipped three months
+  /// running is visible rather than silently reappearing each month.
+  rolledFromId String?       @unique
+  rolledFrom   BudgetIncome? @relation("IncomeRollover", fields: [rolledFromId], references: [id], onDelete: SetNull)
+  rolledTo     BudgetIncome? @relation("IncomeRollover")
+
+  /// Salary and retainers repeat. Creating one with `recurring` set materialises
+  /// copies into the next few months as PROJECTED; RECURRING_HORIZON_MONTHS caps
+  /// how far ahead, so the ledger never runs away.
+  recurring     Boolean @default(false)
+  /// Groups every instance generated from the same original.
+  recurrenceKey String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([budgetMonthId, status])
+  @@index([recurrenceKey])
+  @@index([status, expectedDate])
+}
+
+model BudgetExpense {
+  id            String         @id @default(cuid())
+  budgetMonthId String
+  budgetMonth   BudgetMonth    @relation(fields: [budgetMonthId], references: [id], onDelete: Cascade)
+  title         String
+  amount        Decimal        @db.Decimal(12, 2)
+  category      BudgetCategory
+  /// Committed vs actually paid, so it lines up with projected vs arrived
+  /// income and the comparison means something.
+  status        ExpenseStatus  @default(COMMITTED)
+  paidAt        DateTime?
+  date          DateTime?      @db.Date
+  notes         String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([budgetMonthId, category])
+  @@index([budgetMonthId, status])
+}
+
+// ===========================================================================
+// Notifications, insights, calendar import
+// ===========================================================================
+
+model Notification {
+  id     String           @id @default(cuid())
+  userId String
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type   NotificationType
+  title  String
+  body   String?
+  /// A frontend route, so the client navigates without mapping types.
+  href      String?
+  metadata  Json?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt, createdAt])
+  @@index([userId, createdAt])
+}
+
+/// P-11 — authored coach commentary, not a generated string.
+model CoachInsight {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  adminId     String
+  admin       Admin    @relation(fields: [adminId], references: [id], onDelete: Cascade)
+  headline    String
+  body        String
+  periodStart DateTime @db.Date
+  periodEnd   DateTime @db.Date
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, periodStart, periodEnd])
+}
+
+model CalendarConnection {
+  id             String           @id @default(cuid())
+  userId         String
+  user           User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider       CalendarProvider
+  label          String
+  externalId     String?
+  icsUrl         String?
+  accessToken    String?
+  refreshToken   String?
+  tokenExpiresAt DateTime?
+  syncEnabled    Boolean          @default(true)
+  lastSyncedAt   DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  events ImportedEvent[]
+
+  @@index([userId, syncEnabled])
+}
+
+/// Imported events are a read-only overlay, deliberately NOT Activity rows:
+/// they must not be editable, must not count toward quota, and must not affect
+/// streaks.
+model ImportedEvent {
+  id           String             @id @default(cuid())
+  connectionId String
+  connection   CalendarConnection @relation(fields: [connectionId], references: [id], onDelete: Cascade)
+  userId       String
+  user         User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  externalId   String
+  title        String
+  description  String?
+  date         DateTime           @db.Date
+  startTime    String?
+  endTime      String?
+  allDay       Boolean            @default(false)
+  location     String?
+  updatedAt    DateTime           @updatedAt
+  createdAt    DateTime           @default(now())
+
+  @@unique([connectionId, externalId])
+  @@index([userId, date])
+}
+
+// ===========================================================================
+// Analytics & site content
+// ===========================================================================
+
+model AnalyticsEvent {
+  id        String             @id @default(cuid())
+  type      AnalyticsEventType @default(PAGE_VIEW)
+  path      String?
+  userId    String?
+  user      User?              @relation(fields: [userId], references: [id], onDelete: SetNull)
+  sessionId String?
+  referrer  String?
+  platform  String?
+  metadata  Json?
+  createdAt DateTime           @default(now())
+
+  @@index([type, createdAt])
+  @@index([path])
+  @@index([userId])
+  @@index([sessionId])
+}
+
+/// Per-country billing configuration. Currency, provider and tax all vary by
+/// jurisdiction, and pricing is set deliberately per market rather than by an
+/// FX multiplier — charging Lagos differently from London is the point.
+model CountryConfig {
+  id       String  @id @default(cuid())
+  code     String  @unique // ISO 3166-1 alpha-2
+  name     String
+  currency String // ISO 4217
+
+  /// Overrides the continent-based default when set.
+  defaultProvider PaymentProvider?
+
+  /// Digital-services tax we are liable for when we are merchant of record.
+  /// Ignored where the store or Paddle remits on our behalf.
+  taxRate      Decimal @default(0) @db.Decimal(6, 4)
+  taxType      String? // VAT | GST | SALES_TAX
+  taxInclusive Boolean @default(true)
+
+  /// Turning this off hides the market without deleting its price history.
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active])
+}
+
+/// Landing-page content: a single editable document plus a staff list.
+model SiteContent {
+  id               String   @id @default("singleton")
+  contactEmail     String?
+  contactPhone     String?
+  contactAddress   String?
+  supportEmail     String?
+  /// Landing hero. Copy lives here rather than in the frontend so wording
+  /// changes ship without a deploy, same as plan copy.
+  heroHeadline String?
+  heroSubhead  String?
+  heroCtaLabel String?
+  /// [{ title, body, icon? }]
+  features Json?
+  /// [{ question, answer }]
+  faqs Json?
+
+  aboutHeadline    String?
+  aboutBody        String?
+  socialLinks      Json?
+  updatedByAdminId String?
+  updatedAt        DateTime @updatedAt
+  createdAt        DateTime @default(now())
+}
+
+model StaffMember {
+  id        String   @id @default(cuid())
+  name      String
+  position  String
+  bio       String?
+  imageUrl  String?
+  linkedIn  String?
+  sortOrder Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([active, sortOrder])
+}
