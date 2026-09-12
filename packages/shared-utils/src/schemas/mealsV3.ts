@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { dateString } from './common.js';
+import { booleanQuery, dateString } from './common.js';
 
 /** Foods now carry multiple categories, so the payload takes an array of keys. */
 export const createFoodSchema = z.object({
@@ -24,6 +24,12 @@ export const foodQuerySchema = z.object({
   categoryKey: z.string().trim().max(40).optional(),
   q: z.string().trim().min(1).max(120).optional(),
   activeOnly: z.enum(['true', 'false']).default('true').transform((v) => v === 'true'),
+  /**
+   * Addendum 5 §3 — "Foods I have" needs both the whole catalog with a checked
+   * flag and, on smaller screens, just the checked ones. Omitting the parameter
+   * leaves the response exactly as it was.
+   */
+  inventoryOnly: booleanQuery.optional(),
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(25),
 });
@@ -93,6 +99,49 @@ export const respondMealRequestSchema = z.object({
   status: z.enum(['FULFILLED', 'DECLINED']),
   responseNote: z.string().trim().max(1000).optional(),
 });
+
+/** A pending request may be reworded, but its date is fixed — cancel and re-ask. */
+export const updateMealRequestSchema = z.object({
+  note: z.string().trim().max(1000).nullable(),
+});
+
+// ---------------------------------------------------------------------------
+// User-authored meal plans — Addendum 5 §3
+// ---------------------------------------------------------------------------
+
+/**
+ * Deliberately the same shape as the admin's upsert, minus the fields a person
+ * has no business setting. Writing a plan replaces its meals wholesale, exactly
+ * as the coach-side endpoint does.
+ */
+export const upsertUserMealPlanSchema = z.object({
+  /**
+   * A person's plan is visible to them the moment it is saved, so PUBLISHED is
+   * the default. DRAFT exists so a half-built plan can be parked mid-edit.
+   */
+  status: z.enum(['DRAFT', 'PUBLISHED']).default('PUBLISHED'),
+  targetCalories: z.number().int().min(0).max(20000).nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional(),
+  meals: z.array(mealSchema).max(12),
+  /**
+   * Overwriting a coach's plan is refused unless this is explicitly set, so a
+   * stray save can never wipe out work someone paid for. Setting it converts
+   * the day's plan into the person's own.
+   */
+  takeOver: z.boolean().default(false),
+});
+
+/** Light edits — a note or a calorie target — without resending every meal. */
+export const updateUserMealPlanSchema = z
+  .object({
+    status: z.enum(['DRAFT', 'PUBLISHED']).optional(),
+    targetCalories: z.number().int().min(0).max(20000).nullable().optional(),
+    notes: z.string().trim().max(2000).nullable().optional(),
+  })
+  .refine((v) => Object.keys(v).length > 0, { message: 'Provide at least one field to update' });
+
+export type UpsertUserMealPlanInput = z.infer<typeof upsertUserMealPlanSchema>;
+export type UpdateUserMealPlanInput = z.infer<typeof updateUserMealPlanSchema>;
 
 export type UpsertMealPlanV3Input = z.infer<typeof upsertMealPlanV3Schema>;
 export type CreateFoodInput = z.infer<typeof createFoodSchema>;

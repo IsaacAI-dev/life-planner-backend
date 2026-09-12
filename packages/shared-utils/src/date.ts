@@ -64,12 +64,105 @@ export function endOfWeek(date: Date, weekStartsOn = 1): Date {
   return addDays(startOfWeek(date, weekStartsOn), 6);
 }
 
+/**
+ * Minutes between two "HH:mm" strings. Null when either side is missing or the
+ * span is not positive — callers decide what an untimed activity is worth, so
+ * the fallback is never buried in here.
+ */
+export function minutesBetweenTimes(
+  startTime?: string | null,
+  endTime?: string | null,
+): number | null {
+  if (!startTime || !endTime) return null;
+  if (!TIME_RE.test(startTime) || !TIME_RE.test(endTime)) return null;
+  const [sh, sm] = startTime.split(':').map(Number);
+  const [eh, em] = endTime.split(':').map(Number);
+  const diff = eh * 60 + em - (sh * 60 + sm);
+  return diff > 0 ? diff : null;
+}
+
+/**
+ * "0m", "45m", "2h", "1h 30m" — the exact strings the Insights cards render, so
+ * the number and its label can never disagree between server and client.
+ */
+export function formatMinutes(totalMinutes: number): string {
+  const minutes = Math.max(0, Math.round(totalMinutes));
+  const hours = Math.floor(minutes / 60);
+  const rest = minutes % 60;
+  if (hours === 0) return `${minutes}m`;
+  return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+}
+
+/** Single letters for the daily-activity axis: M T W T F S S. */
+export const WEEKDAY_INITIALS = ['S', 'M', 'T', 'W', 'T', 'F', 'S'] as const;
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
+
+export function weekdayInitial(date: Date): string {
+  return WEEKDAY_INITIALS[dayOfWeek(date)];
+}
+
+export function weekdayShort(date: Date): string {
+  return WEEKDAY_SHORT[dayOfWeek(date)];
+}
+
 export function startOfMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month - 1, 1));
 }
 
 export function endOfMonth(year: number, month: number): Date {
   return new Date(Date.UTC(year, month, 0));
+}
+
+export function startOfQuarter(date: Date): Date {
+  const d = parseDateOnly(date);
+  return new Date(Date.UTC(d.getUTCFullYear(), Math.floor(d.getUTCMonth() / 3) * 3, 1));
+}
+
+export function endOfQuarter(date: Date): Date {
+  const start = startOfQuarter(date);
+  return new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 3, 0));
+}
+
+export type StatsPeriod = 'week' | 'month' | 'quarter';
+
+/**
+ * The Insights header offers Week / Month / Quarter. Resolving that to a
+ * concrete range lives here so the same three words always mean the same three
+ * ranges, whichever endpoint is asked. `anchor` is any day inside the period.
+ */
+export function resolvePeriodRange(
+  period: StatsPeriod,
+  anchor: Date | string = new Date(),
+  weekStartsOn = 1,
+): { from: Date; to: Date } {
+  const day = parseDateOnly(anchor);
+  if (period === 'week') {
+    const from = startOfWeek(day, weekStartsOn);
+    return { from, to: addDays(from, 6) };
+  }
+  if (period === 'month') {
+    return {
+      from: startOfMonth(day.getUTCFullYear(), day.getUTCMonth() + 1),
+      to: endOfMonth(day.getUTCFullYear(), day.getUTCMonth() + 1),
+    };
+  }
+  return { from: startOfQuarter(day), to: endOfQuarter(day) };
+}
+
+/** The period immediately before the given one — used for "vs last week" deltas. */
+export function previousPeriodRange(
+  period: StatsPeriod,
+  from: Date,
+  weekStartsOn = 1,
+): { from: Date; to: Date } {
+  const start = parseDateOnly(from);
+  if (period === 'week') return resolvePeriodRange('week', addDays(start, -7), weekStartsOn);
+  if (period === 'month') {
+    const previous = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 1, 1));
+    return resolvePeriodRange('month', previous, weekStartsOn);
+  }
+  const previous = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() - 3, 1));
+  return resolvePeriodRange('quarter', previous, weekStartsOn);
 }
 
 /** ISO-8601 week key, e.g. "2026-W26" — the bucketing pattern the stats module uses. */

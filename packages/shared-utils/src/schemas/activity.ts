@@ -56,6 +56,87 @@ export const bulkCreateActivitySchema = z
     path: ['rangeEnd'],
   });
 
+// ---------------------------------------------------------------------------
+// Batch editing — Addendum 5 §2
+//
+// These apply only to rows that came out of POST /activities/bulk, i.e. rows
+// carrying a batchId. A one-off activity has no batch and is edited singly.
+// ---------------------------------------------------------------------------
+
+/**
+ * Which rows in the batch an edit touches.
+ *  ALL       — every remaining activity in the batch.
+ *  UPCOMING  — those dated today or later, so past days keep their record.
+ *  PENDING   — those not yet ticked off.
+ * `activityIds` overrides the scope entirely when the client wants an explicit
+ * subset it has already shown the person.
+ */
+export const batchScope = z.enum(['ALL', 'UPCOMING', 'PENDING']);
+
+export const listActivityBatchesQuerySchema = z.object({
+  /** Batches whose activities fall inside this window. Both or neither. */
+  from: dateString.optional(),
+  to: dateString.optional(),
+  /** Include batches whose activities have all been deleted. */
+  includeEmpty: booleanQuery.optional(),
+});
+
+const batchTargetFields = {
+  scope: batchScope.default('ALL'),
+  /** Only meaningful with scope UPCOMING; defaults to today. */
+  fromDate: dateString.optional(),
+  /** An explicit subset. Every id must belong to the batch. */
+  activityIds: z.array(cuidString).min(1).max(366).optional(),
+};
+
+export const updateActivityBatchSchema = z
+  .object({
+    ...batchTargetFields,
+    /** Renames the batch itself; independent of the activities' own titles. */
+    batchTitle: z.string().trim().min(1).max(200).optional(),
+    title: z.string().trim().min(1).max(200).optional(),
+    description: z.string().trim().max(2000).nullable().optional(),
+    categoryId: cuidString.nullable().optional(),
+    goalId: cuidString.nullable().optional(),
+    startTime: timeString.nullable().optional(),
+    endTime: timeString.nullable().optional(),
+    isPrivate: z.boolean().optional(),
+    isDone: z.boolean().optional(),
+    tags: z.array(z.string().trim().min(1).max(40)).max(20).optional(),
+  })
+  .refine(
+    (v) =>
+      [
+        'batchTitle',
+        'title',
+        'description',
+        'categoryId',
+        'goalId',
+        'startTime',
+        'endTime',
+        'isPrivate',
+        'isDone',
+        'tags',
+      ].some((key) => v[key as keyof typeof v] !== undefined),
+    { message: 'Provide at least one field to update' },
+  );
+
+/**
+ * The same target fields, read from the query string of a DELETE. `activityIds`
+ * accepts either repeated parameters or one comma-separated value, because
+ * every HTTP client spells a list differently.
+ */
+export const deleteActivityBatchSchema = z.object({
+  scope: batchScope.default('ALL'),
+  fromDate: dateString.optional(),
+  activityIds: z
+    .preprocess(
+      (v) => (typeof v === 'string' ? v.split(',').map((s) => s.trim()).filter(Boolean) : v),
+      z.array(cuidString).min(1).max(366),
+    )
+    .optional(),
+});
+
 export const toggleActivitySchema = z.object({
   isDone: z.boolean().optional(),
 });
@@ -114,3 +195,6 @@ export type BulkCreateActivityInput = z.infer<typeof bulkCreateActivitySchema>;
 export type CreateFlexibleActivityInput = z.infer<typeof createFlexibleActivitySchema>;
 export type ProgressActivityInput = z.infer<typeof progressActivitySchema>;
 export type ListActivitiesQuery = z.infer<typeof listActivitiesQuerySchema>;
+export type BatchScope = z.infer<typeof batchScope>;
+export type UpdateActivityBatchInput = z.infer<typeof updateActivityBatchSchema>;
+export type DeleteActivityBatchInput = z.infer<typeof deleteActivityBatchSchema>;

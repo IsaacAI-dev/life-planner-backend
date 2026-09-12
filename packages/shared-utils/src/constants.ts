@@ -30,6 +30,33 @@ export const BUDGET_CATEGORY_ORDER = ['MANDATORY', 'SECONDARY', 'OPTIONAL'] as c
  */
 export const STREAK_RULE: 'ALL_ACTIVITIES_DONE' | 'ANY_ACTIVITY_DONE' = 'ALL_ACTIVITIES_DONE';
 
+/**
+ * An activity with no start/end time still has to occupy space on the Insights
+ * chart, so it is counted as this many minutes. Named here rather than inlined
+ * in the stats module because the batch and session endpoints read it too.
+ */
+export const DEFAULT_ACTIVITY_MINUTES = 30;
+
+/**
+ * Activities with no category are grouped under a synthetic life area. The id
+ * is a sentinel, not a row — the frontend keys off it and must never PATCH it.
+ */
+export const UNCATEGORIZED_AREA = {
+  id: 'uncategorized',
+  name: 'Uncategorized',
+  color: '#94A3B8',
+  icon: null,
+} as const;
+
+/** The three ranges behind the Week / Month / Quarter toggle on Insights. */
+export const STATS_PERIODS = ['week', 'month', 'quarter'] as const;
+
+/** Above this many days the daily chart rolls up to weekly buckets instead. */
+export const DAILY_BUCKET_MAX_DAYS = 31;
+
+/** A bulk create never exceeds this, so neither does a batch edit. */
+export const MAX_BATCH_ACTIVITIES = 366;
+
 export const PAGE_SIZE_DEFAULT = 25;
 export const PAGE_SIZE_MAX = 100;
 

@@ -853,6 +853,239 @@
             },
             "description": "Audit trail. Admin-initiated deletions appear here as DELETED_BY_ADMIN with the acting adminId."
           }
+        },
+        {
+          "name": "Batches \u2014 list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches"
+              ]
+            },
+            "description": "Every set created through POST /activities/bulk, with counts, the date range covered, the fields the batch still agrees on and the ones that have diverged (mixedFields)."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.data.batches.length) {",
+                  "  pm.environment.set('batchId', json.data.batches[0].id);",
+                  "  console.log('Saved batchId');",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Batches \u2014 one batch with its activities",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "description": "The batch summary plus every activity still live in it."
+          }
+        },
+        {
+          "name": "Batches \u2014 edit them all",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"batchTitle\": \"Training block\",\n  \"title\": \"Evening run\",\n  \"startTime\": \"18:00\",\n  \"endTime\": \"18:45\",\n  \"tags\": [\n    \"cardio\"\n  ]\n}"
+            },
+            "description": "Applies one change across the batch. batchTitle renames the set itself; the other fields are written to the activities."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('every activity in the batch was updated', function () {",
+                  "  pm.expect(pm.response.json().data.updated).to.be.above(0);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Batches \u2014 edit only the days still to come",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"UPCOMING\",\n  \"description\": \"Only the days still to come\"\n}"
+            },
+            "description": "scope UPCOMING leaves days already past alone, so history stays honest. fromDate overrides 'today' when needed."
+          }
+        },
+        {
+          "name": "Batches \u2014 edit an explicit subset",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activityIds\": [\n    \"{{activityId}}\"\n  ],\n  \"isDone\": true\n}"
+            },
+            "description": "activityIds overrides the scope. Every id must belong to this batch; anything else returns 400 NOT_A_BATCH_ACTIVITY."
+          }
+        },
+        {
+          "name": "Batches \u2014 tick off everything still pending",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"PENDING\",\n  \"isDone\": true\n}"
+            },
+            "description": "isDone across a scope stamps completedAt on each row."
+          }
+        },
+        {
+          "name": "Batches \u2014 delete the unfinished ones",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}?scope=PENDING",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ],
+              "query": [
+                {
+                  "key": "scope",
+                  "value": "PENDING"
+                }
+              ]
+            },
+            "description": "Soft-deletes, exactly like DELETE /activities/:id. The batch row itself is removed once nothing live points at it."
+          }
         }
       ]
     },
@@ -1614,6 +1847,218 @@
                 }
               ]
             }
+          }
+        },
+        {
+          "name": "Insights \u2014 week (whole page in one call)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?period=week",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "week"
+                }
+              ]
+            },
+            "description": "Everything the Insights page renders: planned/completed minutes with labels, streak, notes, life areas with shares, the daily chart, mood and the coach insight. period = week | month | quarter."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.test('planned carries a formatted label', function () {",
+                  "  pm.expect(d.planned.label).to.be.a('string');",
+                  "  pm.expect(d.planned.lifeAreas).to.be.a('number');",
+                  "});",
+                  "pm.test('life area totals add up', function () {",
+                  "  const sum = d.lifeAreas.areas.reduce((s, a) => s + a.total, 0);",
+                  "  pm.expect(d.lifeAreas.total).to.eql(sum);",
+                  "});",
+                  "pm.test('a week gives seven buckets', function () {",
+                  "  pm.expect(d.dailyActivity.buckets.length).to.eql(7);",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insights \u2014 month",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?period=month",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "month"
+                }
+              ]
+            },
+            "description": "Calendar month containing `anchor` (today when omitted)."
+          }
+        },
+        {
+          "name": "Insights \u2014 quarter (chart rolls up to weeks)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?period=quarter",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "quarter"
+                }
+              ]
+            },
+            "description": "Ranges longer than 31 days switch dailyActivity.granularity to 'week'."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('granularity is weekly', function () {",
+                  "  pm.expect(pm.response.json().data.dailyActivity.granularity).to.eql('week');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insights \u2014 page back a week",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?period=week&anchor=2026-08-24",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "period",
+                  "value": "week"
+                },
+                {
+                  "key": "anchor",
+                  "value": "2026-08-24"
+                }
+              ]
+            },
+            "description": "`anchor` is any day inside the period being viewed, so paging is one parameter change rather than date arithmetic on the client."
+          }
+        },
+        {
+          "name": "Insights \u2014 explicit range",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?from=2026-06-01&to=2026-06-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-06-01"
+                },
+                {
+                  "key": "to",
+                  "value": "2026-06-07"
+                }
+              ]
+            },
+            "description": "from/to override the period entirely and come back as period: 'custom'. They must be sent together."
+          }
+        },
+        {
+          "name": "Insights \u2014 period boundaries",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights/periods",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights",
+                "periods"
+              ]
+            },
+            "description": "Current and previous date ranges for each of the three toggles, honouring the person's weekStartsOn."
           }
         }
       ]
@@ -2476,6 +2921,363 @@
               ]
             },
             "description": "Only PUBLISHED plans are ever visible to the user; a DRAFT plan the admin is still building returns 404."
+          }
+        },
+        {
+          "name": "Catalog \u2014 with the person's selections flagged",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/food-catalog?page=1&pageSize=25",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "food-catalog"
+              ],
+              "query": [
+                {
+                  "key": "page",
+                  "value": "1"
+                },
+                {
+                  "key": "pageSize",
+                  "value": "25"
+                }
+              ]
+            },
+            "description": "Each item carries inInventory, and the response also carries the full selectedFoodItemIds list so a checkbox on page 4 still renders ticked."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const d = pm.response.json().data;",
+                  "pm.test('items are flagged', function () {",
+                  "  pm.expect(d.items.every(i => typeof i.inInventory === 'boolean')).to.be.true;",
+                  "});",
+                  "pm.test('the whole selection is returned', function () {",
+                  "  pm.expect(d.selectedFoodItemIds).to.be.an('array');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Catalog \u2014 only the foods I have",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/food-catalog?inventoryOnly=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "food-catalog"
+              ],
+              "query": [
+                {
+                  "key": "inventoryOnly",
+                  "value": "true"
+                }
+              ]
+            },
+            "description": "Narrows the catalog to the person's own inventory."
+          }
+        },
+        {
+          "name": "Day view \u2014 plan, request state and what's allowed",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/day/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "day",
+                "2026-09-07"
+              ]
+            },
+            "description": "Always 200: 'no plan for this day' is an ordinary state, not an error. Also returns canRequestPlan, canCreateOwnPlan, the pending request and requestBlockedReason (UPGRADE_REQUIRED | REQUEST_PENDING | null)."
+          }
+        },
+        {
+          "name": "Requests \u2014 can I ask for one?",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests/pending",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests",
+                "pending"
+              ]
+            },
+            "description": "The single call the nutrition page makes to decide whether the Request button is live."
+          }
+        },
+        {
+          "name": "Requests \u2014 ask for a plan",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-09-07\",\n  \"note\": \"Something light, high protein\"\n}"
+            },
+            "description": "Pro only. Refused with 409 MEAL_REQUEST_PENDING when a request is already open; the error details name the day already asked about."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const json = pm.response.json();",
+                  "if (json.success && json.data.request) {",
+                  "  pm.environment.set('mealRequestId', json.data.request.id);",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Requests \u2014 reword a pending one",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests/{{mealRequestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests",
+                "{{mealRequestId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"note\": \"Actually, low carb please\"\n}"
+            },
+            "description": "Only while PENDING. To change the day, cancel and ask again."
+          }
+        },
+        {
+          "name": "Requests \u2014 withdraw",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests/{{mealRequestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests",
+                "{{mealRequestId}}"
+              ]
+            },
+            "description": "Marks the request CANCELLED rather than deleting it, and frees the person to raise a new one straight away."
+          }
+        },
+        {
+          "name": "My plan \u2014 create or replace",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"My own plan for the day\",\n  \"targetCalories\": 2000,\n  \"meals\": [\n    {\n      \"name\": \"Breakfast\",\n      \"mealTime\": \"BREAKFAST\",\n      \"order\": 0,\n      \"items\": [\n        {\n          \"foodItemId\": \"{{foodItemId}}\",\n          \"servings\": 1,\n          \"order\": 0\n        }\n      ]\n    },\n    {\n      \"name\": \"Lunch\",\n      \"mealTime\": \"LUNCH\",\n      \"order\": 1,\n      \"items\": [\n        {\n          \"freeText\": \"Leftover jollof\",\n          \"order\": 0\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "description": "Pro only. Replaces the day's meals wholesale. A plan a coach wrote is refused with 409 PLAN_NOT_EDITABLE unless takeOver is true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('the plan is mine and editable', function () {",
+                  "  const p = pm.response.json().data.mealPlan;",
+                  "  pm.expect(p.source).to.eql('USER');",
+                  "  pm.expect(p.isEditable).to.be.true;",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "My plan \u2014 take over a coach's plan",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"takeOver\": true,\n  \"notes\": \"Adjusted it to what I actually have in\",\n  \"meals\": [\n    {\n      \"name\": \"Dinner\",\n      \"mealTime\": \"DINNER\",\n      \"order\": 0,\n      \"items\": [\n        {\n          \"freeText\": \"Rice and stew\",\n          \"order\": 0\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "description": "takeOver converts the day into the person's own plan and clears the coach's authorship. Deliberately explicit so an autosave can never wipe out work they asked for."
+          }
+        },
+        {
+          "name": "My plan \u2014 edit the notes only",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"notes\": \"Swapped lunch\",\n  \"targetCalories\": 1900\n}"
+            },
+            "description": "Light edits without resending every meal. USER-authored plans only."
+          }
+        },
+        {
+          "name": "My plan \u2014 delete",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "description": "Your own plans only; a coach's plan returns 409 PLAN_NOT_EDITABLE."
           }
         }
       ]
@@ -3592,6 +4394,39 @@
                 "2026-06-22"
               ]
             }
+          }
+        },
+        {
+          "name": "Publish a plan (closes any pending request)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{adminAccessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/users/{{userId}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "users",
+                "{{userId}}",
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"status\": \"PUBLISHED\",\n  \"targetCalories\": 1800,\n  \"notes\": \"Coach-authored\",\n  \"meals\": [\n    {\n      \"name\": \"Breakfast\",\n      \"mealTime\": \"BREAKFAST\",\n      \"order\": 0,\n      \"items\": [\n        {\n          \"freeText\": \"Oats and banana\",\n          \"order\": 0\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "description": "Publishing marks a PENDING request for that day FULFILLED, so a person is never locked out of asking again by a coach forgetting to respond. Writing the day also takes authorship of it (source COACH)."
           }
         }
       ]
@@ -4978,6 +5813,312 @@
                 "type": "text/javascript",
                 "exec": [
                   "pm.test('400 Bad Request', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Insights \u2014 from without to (400)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/stats/insights?from=2026-06-01",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "stats",
+                "insights"
+              ],
+              "query": [
+                {
+                  "key": "from",
+                  "value": "2026-06-01"
+                }
+              ]
+            },
+            "description": "from and to must be sent together."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Batch \u2014 an id from another batch (400 NOT_A_BATCH_ACTIVITY)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"activityIds\": [\n    \"not-in-this-batch\"\n  ],\n  \"title\": \"nope\"\n}"
+            },
+            "description": "Ids that are not part of this batch are an error, not a silent no-op."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400 NOT_A_BATCH_ACTIVITY', function () {",
+                  "  pm.response.to.have.status(400);",
+                  "  pm.expect(pm.response.json().error.code).to.eql('NOT_A_BATCH_ACTIVITY');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Batch \u2014 nothing to change (400)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/activities/batches/{{batchId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "activities",
+                "batches",
+                "{{batchId}}"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"scope\": \"ALL\"\n}"
+            },
+            "description": "An empty patch is rejected rather than counted as a no-op success."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('400', function () { pm.response.to.have.status(400); });"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meal request \u2014 a second one while pending (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-09-08\",\n  \"note\": \"another one\"\n}"
+            },
+            "description": "Only one request may be open at a time. The error details carry the pending request so the UI can say which day it is about."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 MEAL_REQUEST_PENDING', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  pm.expect(pm.response.json().error.code).to.eql('MEAL_REQUEST_PENDING');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meal plan \u2014 overwriting a coach's plan (409)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"meals\": [\n    {\n      \"order\": 0,\n      \"items\": [\n        {\n          \"freeText\": \"My own idea\",\n          \"order\": 0\n        }\n      ]\n    }\n  ]\n}"
+            },
+            "description": "Refused unless takeOver is true."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('409 PLAN_NOT_EDITABLE', function () {",
+                  "  pm.response.to.have.status(409);",
+                  "  pm.expect(pm.response.json().error.code).to.eql('PLAN_NOT_EDITABLE');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meal plans on Free \u2014 request (402)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/requests",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "requests"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"2026-09-07\"\n}"
+            },
+            "description": "Run as a Free user. Both asking for a plan and building one are Pro."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('402 UPGRADE_REQUIRED', function () {",
+                  "  pm.response.to.have.status(402);",
+                  "  pm.expect(pm.response.json().error.code).to.eql('UPGRADE_REQUIRED');",
+                  "});"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Meal plans on Free \u2014 build your own (402)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{accessToken}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/meal-plans/2026-09-07",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "meal-plans",
+                "2026-09-07"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"meals\": []\n}"
+            },
+            "description": "Run as a Free user."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('402', function () { pm.response.to.have.status(402); });"
                 ]
               }
             }

@@ -12,6 +12,28 @@ export const dailyStatsQuerySchema = z
   .object({ from: dateString, to: dateString })
   .refine((v) => v.to >= v.from, { message: '`to` must be on or after `from`', path: ['to'] });
 
+/**
+ * Addendum 5 §1 — the Insights page asks for one period, not one date range.
+ * `anchor` is any day inside the period being viewed (defaults to today), so
+ * paging back a week is a single parameter change. An explicit from/to still
+ * wins for callers that already know the range they want.
+ */
+export const insightsQuerySchema = z
+  .object({
+    period: z.enum(['week', 'month', 'quarter']).default('week'),
+    anchor: dateString.optional(),
+    from: dateString.optional(),
+    to: dateString.optional(),
+  })
+  .refine((v) => (v.from === undefined) === (v.to === undefined), {
+    message: 'Provide `from` and `to` together, or neither',
+    path: ['to'],
+  })
+  .refine((v) => !v.from || !v.to || v.to >= v.from, {
+    message: '`to` must be on or after `from`',
+    path: ['to'],
+  });
+
 /** P-11 */
 export const coachInsightQuerySchema = z.object({
   from: dateString.optional(),
@@ -129,6 +151,8 @@ export const securityActionResponseSchema = z.object({
 export const reviewSecurityReportSchema = z.object({
   reviewNote: z.string().trim().max(2000).optional(),
 });
+
+export type InsightsQuery = z.infer<typeof insightsQuerySchema>;
 
 export const securityReportQuerySchema = z.object({
   outcome: z.enum(['REPORTED', 'REJECTED']).optional(),

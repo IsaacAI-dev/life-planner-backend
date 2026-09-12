@@ -13,6 +13,7 @@ import { requireAuth } from './middleware/auth.js';
 import { authRouter } from './modules/auth.js';
 import { categoriesRouter } from './modules/categories.js';
 import { activitiesRouter } from './modules/activities.js';
+import { activityBatchesRouter } from './modules/activityBatches.js';
 import { calendarRouter } from './modules/calendar.js';
 import { daysRouter } from './modules/days.js';
 import { goalsRouter } from './modules/goals.js';
@@ -93,6 +94,8 @@ export const createApp = () => {
 
   // --- authenticated ---
   api.use('/categories', requireAuth, categoriesRouter);
+  // Must precede /activities: otherwise GET /activities/:id captures 'batches'.
+  api.use('/activities/batches', requireAuth, activityBatchesRouter);
   api.use('/activities', requireAuth, activitiesRouter);
   api.use('/calendar', requireAuth, calendarRouter);
   api.use('/days', requireAuth, daysRouter);

@@ -48,4 +48,10 @@ export const activityInclude = {
   category: { select: { id: true, name: true, color: true, icon: true } },
   tags: { select: { id: true, name: true, color: true } },
   goal: { select: { id: true, title: true, status: true } },
+  /**
+   * Addendum 5 §2 — the client needs to know an activity came out of a bulk
+   * create before it can offer "edit the whole series", so the batch travels
+   * with every activity rather than needing a second lookup.
+   */
+  batch: { select: { id: true, title: true } },
 } satisfies Prisma.ActivityInclude;

@@ -23,6 +23,8 @@ export const serializeActivity = (activity: AnyRecord) => ({
   windowStart: activity.windowStart ? toDateOnlyString(activity.windowStart as Date) : null,
   windowEnd: activity.windowEnd ? toDateOnlyString(activity.windowEnd as Date) : null,
   isFlexible: activity.date === null,
+  /** True when the row came from POST /activities/bulk, so batch edits apply. */
+  isBatchCreated: Boolean(activity.batchId),
 });
 
 export const serializeGoal = (goal: AnyRecord) => ({

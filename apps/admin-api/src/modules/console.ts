@@ -302,6 +302,7 @@ consoleRouter.get(
           status: true,
           targetCalories: true,
           user: ownerSelect,
+          source: true,
           createdByAdmin: { select: { id: true, name: true } },
           meals: {
             select: {
@@ -343,6 +344,8 @@ consoleRouter.get(
           mealCount: p.meals.length,
           mealTimes: p.meals.map((m) => m.mealTime).filter(Boolean),
           totalCalories: Math.round(calories(p.meals)),
+          // Null author now means the person built the plan themselves.
+          source: p.source,
           createdBy: p.createdByAdmin,
         })),
         q.page,

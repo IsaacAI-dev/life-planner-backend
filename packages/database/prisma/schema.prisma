@@ -261,10 +261,20 @@ enum MealPlanStatus {
   PUBLISHED
 }
 
+/// Who authored a plan. A coach plan is read-only to the person it belongs to;
+/// a USER plan is theirs to edit. Both live in the same table, so the day view
+/// stays a single lookup.
+enum MealPlanSource {
+  COACH
+  USER
+}
+
 enum MealPlanRequestStatus {
   PENDING
   FULFILLED
   DECLINED
+  /// Withdrawn by the person, which frees them to raise a new request.
+  CANCELLED
 }
 
 // --- Misc -------------------------------------------------------------------
@@ -1432,8 +1442,12 @@ model MealPlan {
   id               String         @id @default(cuid())
   userId           String
   user             User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdByAdminId String
-  createdByAdmin   Admin          @relation(fields: [createdByAdminId], references: [id], onDelete: Cascade)
+  /// Null for a plan the person built themselves. SetNull rather than Cascade:
+  /// an admin leaving must not take their clients' plans with them.
+  createdByAdminId String?
+  createdByAdmin   Admin?         @relation(fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  /// COACH (default) keeps every existing row exactly as it was.
+  source           MealPlanSource @default(COACH)
   date             DateTime       @db.Date
   status           MealPlanStatus @default(DRAFT)
   targetCalories   Int?
@@ -1498,6 +1512,9 @@ model MealPlanRequest {
 
   @@unique([userId, date])
   @@index([status, createdAt])
+  /// "Does this person already have a request in flight?" is asked on every
+  /// nutrition page load now, so it gets its own index.
+  @@index([userId, status])
 }
 
 // ===========================================================================

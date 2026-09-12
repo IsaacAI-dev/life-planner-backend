@@ -289,13 +289,17 @@ adminUserFoodRouter.put(
     const plan = await prisma.$transaction(async (tx) => {
       const existing = await tx.mealPlan.findUnique({
         where: { userId_date: { userId: user.id, date } },
-        select: { id: true, status: true, publishedAt: true },
+        select: { id: true, status: true, publishedAt: true, source: true },
       });
 
       const saved = existing
         ? await tx.mealPlan.update({
             where: { id: existing.id },
             data: {
+              // A coach writing the day takes authorship of it, which also
+              // makes the plan read-only to the person until they take it back.
+              source: 'COACH',
+              createdByAdminId: me.id,
               status,
               targetCalories: targetCalories ?? null,
               notes: notes ?? null,
@@ -311,6 +315,7 @@ adminUserFoodRouter.put(
             data: {
               userId: user.id,
               createdByAdminId: me.id,
+              source: 'COACH',
               date,
               status,
               targetCalories: targetCalories ?? null,
@@ -357,6 +362,20 @@ adminUserFoodRouter.put(
         },
       });
       await publishRealtime(userRoom(user.id), 'mealplan:published', { date: req.params.date });
+
+      /**
+       * Addendum 5 §3 — only one request may be open at a time, so a request
+       * that has visibly been answered must not keep the person locked out.
+       * Publishing the plan closes it whether or not the coach remembers to.
+       */
+      await prisma.mealPlanRequest.updateMany({
+        where: { userId: user.id, date, status: 'PENDING' },
+        data: {
+          status: 'FULFILLED',
+          handledByAdminId: me.id,
+          handledAt: new Date(),
+        },
+      });
     }
 
     sendOk(res, { mealPlan: serializePlan(plan) });

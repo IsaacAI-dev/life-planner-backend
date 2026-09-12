@@ -16,6 +16,15 @@ export const ErrorCode = {
   NOT_A_FLEXIBLE_TASK: 'NOT_A_FLEXIBLE_TASK',
   NOT_A_DATED_TASK: 'NOT_A_DATED_TASK',
   SHARE_NOT_GRANTED: 'SHARE_NOT_GRANTED',
+  // Addendum 5
+  /// The activity was created on its own, so it has no batch to edit.
+  NOT_A_BATCH_ACTIVITY: 'NOT_A_BATCH_ACTIVITY',
+  /// A meal-plan request is already in flight; only one may be open at a time.
+  MEAL_REQUEST_PENDING: 'MEAL_REQUEST_PENDING',
+  /// The plan belongs to a coach, so the person may not overwrite it silently.
+  PLAN_NOT_EDITABLE: 'PLAN_NOT_EDITABLE',
+  /// Paid-only feature reached on a Free plan. Always paired with a 402.
+  UPGRADE_REQUIRED: 'UPGRADE_REQUIRED',
 } as const;
 
 export type ErrorCodeValue = (typeof ErrorCode)[keyof typeof ErrorCode];
@@ -51,8 +60,8 @@ export class AppError extends Error {
   static notFound(message = 'Resource not found') {
     return new AppError(404, ErrorCode.NOT_FOUND, message);
   }
-  static conflict(message: string, code: ErrorCodeValue = ErrorCode.CONFLICT) {
-    return new AppError(409, code, message);
+  static conflict(message: string, code: ErrorCodeValue = ErrorCode.CONFLICT, details?: unknown) {
+    return new AppError(409, code, message, details);
   }
   static internal(message = 'Something went wrong') {
     return new AppError(500, ErrorCode.INTERNAL_ERROR, message);
